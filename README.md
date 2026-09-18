@@ -2,7 +2,10 @@
 
 **AeroSage turns machine telemetry into evidence you can act on.** It profiles uploaded CSV telemetry, detects anomalies and incident windows, reconstructs an evidence-first baseline, then uses **NVIDIA Nemotron 3 Super on Nebius Token Factory** to rank competing hypotheses. Optional **Tavily** grounding brings in relevant technical documentation.
 
-**Live demo:** https://aerosage-ai.netlify.app
+- **Live demo:** https://aerosage-ai.netlify.app
+- **Demo video:** https://youtu.be/CR_o_ouLBX4
+- **60-second judge guide:** [JUDGE_GUIDE.md](JUDGE_GUIDE.md)
+- **Reproducible guardrail validation:** [GUARDRAIL_VALIDATION.md](GUARDRAIL_VALIDATION.md)
 
 Built for the **Nebius × NVIDIA Global AI Hackathon 2026**.
 
