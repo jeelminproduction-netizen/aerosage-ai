@@ -39,6 +39,20 @@ The current drone demo includes explicit post-validation rules. Examples:
 
 These checks are intentionally shown in the UI so judges and operators can see where AI claims were filtered.
 
+### Reproducible validation
+
+[![Evidence guardrail tests](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml/badge.svg)](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml)
+
+The evidence policy is backed by **17 zero-dependency automated tests** that exercise the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, and deterministic risk protection.
+
+Run locally:
+
+```bash
+node --test tests/guardrails.test.mjs
+```
+
+See **[GUARDRAIL_VALIDATION.md](GUARDRAIL_VALIDATION.md)** for the full validation matrix and rationale.
+
 ## Architecture
 
 ```text

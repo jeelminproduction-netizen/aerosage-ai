@@ -1,0 +1,30 @@
+name: Evidence guardrail tests
+
+on:
+  push:
+    paths:
+      - 'netlify/functions/analyze.mjs'
+      - 'tests/**'
+      - '.github/workflows/guardrails.yml'
+  pull_request:
+    paths:
+      - 'netlify/functions/analyze.mjs'
+      - 'tests/**'
+      - '.github/workflows/guardrails.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run evidence guardrail validation
+        run: node --test tests/guardrails.test.mjs
