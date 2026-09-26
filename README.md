@@ -46,7 +46,7 @@ These checks are intentionally shown in the UI so judges and operators can see w
 
 [![Evidence guardrail tests](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml/badge.svg)](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml)
 
-The evidence policy is backed by **17 zero-dependency automated tests** that exercise the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, and deterministic risk protection.
+The evidence policy is backed by **20/20 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, and complete decision-trace output.
 
 Run locally:
 
@@ -55,6 +55,8 @@ node --test tests/guardrails.test.mjs
 ```
 
 See **[GUARDRAIL_VALIDATION.md](GUARDRAIL_VALIDATION.md)** for the full validation matrix and rationale.
+
+The live report exposes a compact **Investigation trace** for every Nemotron proposal: `telemetry evidence → hypothesis → deterministic rule → verdict`. Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself**.
 
 ## Architecture
 

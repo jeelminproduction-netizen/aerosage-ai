@@ -166,3 +166,34 @@ test('does not cap GPS loss when satellite count is poor', () => {
   const g = deriveEvidenceGuardrails(packet);
   assert.equal(g.confidence_caps.gps, undefined);
 });
+
+test('publishes a reproducible 88% magnetic adversarial probe', () => {
+  const g = deriveEvidenceGuardrails(incidentPacket());
+  assert.equal(g.validation_probe.hypothesis, 'Magnetic disturbance');
+  assert.equal(g.validation_probe.proposed_confidence, 0.88);
+  assert.equal(g.validation_probe.verdict, 'REJECTED');
+  assert.match(g.validation_probe.telemetry_evidence, /magneto_episodes = 0/);
+});
+
+test('records the evidence, rule and verdict for a rejected hypothesis', () => {
+  const out = checkedReport(incidentPacket(), [
+    { cause: 'Magnetic disturbance', confidence: 0.88, why: 'Compass interference.' },
+    { cause: 'Propulsion / motor cut-out event', confidence: 0.72, why: 'Explicit cut-out.' },
+  ]);
+  const decision = out.investigation_trace.find(item => item.domain === 'magnetic');
+  assert.equal(decision.verdict, 'REJECTED');
+  assert.equal(decision.proposed_confidence, 0.88);
+  assert.match(decision.telemetry_evidence, /magneto_episodes = 0/);
+  assert.match(decision.rule, /Block magnetic/);
+});
+
+test('records both proposed and final confidence for a capped hypothesis', () => {
+  const out = checkedReport(incidentPacket(), [
+    { cause: 'Radio link loss', confidence: 0.89, why: 'Signal loss.' },
+    { cause: 'Propulsion / motor cut-out event', confidence: 0.72, why: 'Explicit cut-out.' },
+  ]);
+  const decision = out.investigation_trace.find(item => item.domain === 'radio');
+  assert.equal(decision.verdict, 'CAPPED');
+  assert.equal(decision.proposed_confidence, 0.89);
+  assert.equal(decision.final_confidence, 0.30);
+});

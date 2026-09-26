@@ -28,8 +28,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 17
-# pass 17
+# tests 20
+# pass 20
 # fail 0
 ```
 
@@ -64,7 +64,7 @@ That separation is the core product idea: generative reasoning is useful, but me
 - Runtime Tavily grounding.
 - Deterministic telemetry preprocessing and robust anomaly detection before the LLM call.
 - Post-validation of model output against target-event telemetry.
-- 17 zero-dependency automated guardrail tests in CI.
+- 20/20 zero-dependency automated guardrail tests passed in CI.
 - A deterministic baseline remains usable if an external provider is unavailable.
 
 ### Design

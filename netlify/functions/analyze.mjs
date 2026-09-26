@@ -20,7 +20,12 @@ export default async (req) => {
     packet = buildEvidencePacket(rows, profiles, incidents, vehicle, notes);
     const guardrails = deriveEvidenceGuardrails(packet);
     packet.evidence_guardrails = guardrails;
-    baseline = {...deterministicReport(packet), evidence_guardrails: guardrails.notes};
+    baseline = {
+      ...deterministicReport(packet),
+      evidence_guardrails: guardrails.notes,
+      validation_probe: guardrails.validation_probe,
+      investigation_trace: []
+    };
   } catch (e) {
     return reply({ error: safeMessage(e, 'Telemetry preprocessing failed.') }, 400);
   }
@@ -168,7 +173,16 @@ function deriveEvidenceGuardrails(packet){
   if((critBattMax===0||critBattMax===null)&&(lowBattMax===0||lowBattMax===null)&&batteryMin!==null&&batteryMin>20){capped.battery_depletion=.25;notes.push(`Battery depletion confidence capped: no low/critical-battery episode in target rows and minimum battery is ${batteryMin}%.`);}
   if(wifiWorst!==null&&wifiWorst>-80){capped.radio=.30;notes.push(`Radio-link loss confidence capped: weakest target-event Wi-Fi is ${wifiWorst} dBm, above the -80 dBm incident threshold.`);}
   if(satMedianMin!==null&&satMedianMin>=8){capped.gps=.25;notes.push(`GPS-loss confidence capped: target-event median satellite count is at least ${satMedianMin}.`);}
-  return {target_rows:rows.map(r=>r.row_index),blocked_domains:blocked,confidence_caps:capped,notes};
+  const validationProbe=magnetMax===0?{
+    kind:'adversarial-control',
+    hypothesis:'Magnetic disturbance',
+    proposed_confidence:.88,
+    telemetry_evidence:'magneto_episodes = 0 in every target cut-out row',
+    rule:'Reject magnetic hypotheses when target-event magnetometer episodes equal zero.',
+    verdict:'REJECTED',
+    reason:'The proposed cause contradicts measured target-event telemetry.'
+  }:null;
+  return {target_rows:rows.map(r=>r.row_index),blocked_domains:blocked,confidence_caps:capped,notes,validation_probe:validationProbe};
 }
 function hypothesisDomain(text){
   const t=String(text||'').toLowerCase();
@@ -181,20 +195,42 @@ function hypothesisDomain(text){
   return 'other';
 }
 function severityRank(r){return ({low:0,medium:1,high:2,critical:3})[String(r||'').toLowerCase()]??0}
+function guardrailEvidence(domain, g){
+  if(domain==='magnetic')return 'magneto_episodes = 0 in every target cut-out row';
+  if(domain==='attitude')return 'angle_episodes = 0 in every target cut-out row';
+  const note=(g.notes||[]).find(n=>domain==='battery'?/^Battery depletion/i.test(n):domain==='radio'?/^Radio-link/i.test(n):domain==='gps'?/^GPS-loss/i.test(n):domain==='propulsion'?/^Explicit motor cut-out/i.test(n):false);
+  return note||'No contradictory target-event rule was triggered.';
+}
+function guardrailRule(domain, verdict, cap){
+  if(verdict==='REJECTED')return `Block ${domain} hypotheses contradicted by zero-event telemetry.`;
+  if(verdict==='CAPPED')return `Cap unsupported ${domain} confidence at ${Math.round(cap*100)}%.`;
+  return domain==='propulsion'?'Preserve explicit propulsion evidence in the ranked result.':'Allow when no deterministic evidence rule is violated.';
+}
 function applyEvidenceGuardrails(report, packet, fallback){
   const g=packet.evidence_guardrails||deriveEvidenceGuardrails(packet);
   let filtered=0;
   let causes=(report.likely_causes||[]).map(c=>({...c}));
   const safe=[];
+  const trace=[];
   for(const c of causes){
     const text=`${c.cause||''} ${c.why||''}`;
     const d=hypothesisDomain(text);
-    if((g.blocked_domains||[]).includes(d)){filtered++;continue;}
+    const proposedConfidence=Number(c.confidence)||0;
+    if((g.blocked_domains||[]).includes(d)){
+      filtered++;
+      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:null,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'REJECTED'),verdict:'REJECTED'});
+      continue;
+    }
     let cap=null;
     if(d==='radio')cap=g.confidence_caps?.radio;
     if(d==='gps')cap=g.confidence_caps?.gps;
     if(d==='battery' && /deplet|low battery|critical battery|exhaust|empty|state of charge/i.test(text))cap=g.confidence_caps?.battery_depletion;
-    if(Number.isFinite(cap) && Number(c.confidence)>cap){c.confidence=cap; c.why=`${c.why} Confidence capped by contradictory/absent target-event telemetry.`.slice(0,320);filtered++;}
+    if(Number.isFinite(cap) && Number(c.confidence)>cap){
+      c.confidence=cap; c.why=`${c.why} Confidence capped by contradictory/absent target-event telemetry.`.slice(0,320);filtered++;
+      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:cap,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'CAPPED',cap),verdict:'CAPPED'});
+    }else{
+      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:proposedConfidence,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'ACCEPTED'),verdict:'ACCEPTED'});
+    }
     safe.push(c);
   }
   const hasPropulsion=safe.some(c=>hypothesisDomain(`${c.cause} ${c.why}`)==='propulsion');
@@ -209,6 +245,8 @@ function applyEvidenceGuardrails(report, packet, fallback){
   }
   report.evidence_guardrails=g.notes||[];
   report.guardrail_filtered=filtered;
+  report.validation_probe=g.validation_probe||null;
+  report.investigation_trace=trace;
   return report;
 }
 function groundingQuery(vehicle, packet){

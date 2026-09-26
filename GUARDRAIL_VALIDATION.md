@@ -17,8 +17,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 17
-# pass 17
+# tests 20
+# pass 20
 # fail 0
 ```
 
@@ -37,6 +37,9 @@ Expected result:
 | Low-battery evidence actually exists | `low_batt_episodes > 0` | Do not apply the depletion cap |
 | Severe radio weakness exists | Wi-Fi <= -80 dBm | Do not apply the radio cap |
 | Poor GPS evidence exists | Low satellite count | Do not apply the GPS cap |
+| Adversarial magnetic probe | `Magnetic disturbance — 88%` with `magneto_episodes = 0` | Publish a reproducible `REJECTED` trace |
+| Rejected-hypothesis audit | Contradictory candidate | Record evidence, rule and verdict |
+| Confidence-cap audit | Unsupported 89% radio-loss candidate | Record 89% proposed → 30% final |
 
 The remaining tests verify target-event selection, domain classification, confidence-cap application, evidence replacement, and guardrail accounting.
 
@@ -45,6 +48,8 @@ The remaining tests verify target-event selection, domain classification, confid
 Generative models can produce technically plausible explanations that conflict with measured data. AeroSage uses Nemotron for hypothesis generation and synthesis, while deterministic telemetry remains the authority for whether a hypothesis can be promoted.
 
 A concrete example from development was a high-confidence magnetic explanation despite zero magnetic episodes in the target cut-out rows. The current guardrail layer rejects that contradiction instead of displaying it as a likely cause.
+
+The UI presents this as an explicitly labeled adversarial control, not as a fabricated live model response. Live Nemotron decisions are recorded separately with proposed confidence, telemetry evidence, deterministic rule, final confidence and verdict.
 
 ## CI
 

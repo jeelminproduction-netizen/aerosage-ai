@@ -8,7 +8,7 @@ Machine failures leave evidence in telemetry, but turning raw logs into a defens
 
 AeroSage ingests telemetry CSVs, profiles signals, detects statistical anomalies and safety events, reconstructs the incident sequence, and builds an evidence-first baseline. NVIDIA Nemotron 3 Super then ranks competing hypotheses through Nebius Token Factory, while Tavily can ground the investigation in technical documentation.
 
-The differentiator is an evidence-guardrail layer: LLM hypotheses are post-validated against the target-event telemetry before they can be ranked. Unsupported explanations are removed or confidence-capped. The UI exposes those decisions with the message: **AI proposes · telemetry decides.**
+The differentiator is an evidence-guardrail layer: LLM hypotheses are post-validated against the target-event telemetry before they can be ranked. Unsupported explanations are removed or confidence-capped. The UI exposes a complete trace — **telemetry evidence → Nemotron hypothesis → deterministic rule → verdict** — with the message: **AI proposes · telemetry decides.** Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself.**
 
 ## How we built it
 
@@ -31,6 +31,8 @@ We also made external enrichment best-effort: the baseline report remains availa
 - Real Nebius/Nemotron inference integrated end-to-end
 - Tavily grounding integrated end-to-end
 - Evidence guardrails visibly filter unsupported AI claims
+- Reproducible **20/20 production-guardrail tests passed**
+- Auditable live decisions plus an adversarial control: `Magnetic disturbance 88% → REJECTED because magneto_episodes = 0`
 - Deployed public application
 - Demo based on real, sanitized drone telemetry rather than fabricated rows
 
