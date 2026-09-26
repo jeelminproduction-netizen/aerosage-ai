@@ -12,11 +12,11 @@ source = source.replace(/export\s+default\s+async\s*\(req\)\s*=>\s*\{/, 'async f
 if (/\bexport\s+default\b/.test(source)) {
   throw new Error('Could not instrument analyze.mjs for guardrail tests. The handler signature changed.');
 }
-source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance };`;
-const sandbox = {};
+source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, sha256Hex };`;
+const sandbox = { crypto: globalThis.crypto, TextEncoder };
 vm.createContext(sandbox);
 new vm.Script(source, { filename: sourcePath }).runInContext(sandbox);
-const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance } = sandbox.__AEROSAGE_TEST_API__;
+const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, sha256Hex } = sandbox.__AEROSAGE_TEST_API__;
 
 function incidentPacket(values = {}) {
   return {
@@ -211,4 +211,20 @@ test('provenance explicitly keeps telemetry outside model authority', () => {
   const provenance = buildEvidenceProvenance(incidentPacket());
   assert.match(provenance.model_boundary, /read-only/);
   assert.match(provenance.adjudication, /Deterministic rules/);
+});
+
+test('evidence manifest hashes the exact CSV bytes and identifies the ruleset', async () => {
+  const csv = 'signal,value\nmagneto_episodes,0\n';
+  const manifest = await buildEvidenceManifest(csv, 'nvidia/test-model', '2026-09-26T20:00:00.000Z');
+  assert.equal(manifest.csv_sha256, await sha256Hex(csv));
+  assert.equal(manifest.nemotron_model, 'nvidia/test-model');
+  assert.equal(manifest.guardrail_ruleset, 'aerosage-guardrails-v1.2.0');
+  assert.match(manifest.manifest_sha256, /^[a-f0-9]{64}$/);
+});
+
+test('evidence manifest digest changes when any covered field changes', async () => {
+  const first = await buildEvidenceManifest('a,b\n1,2\n', 'model-a', '2026-09-26T20:00:00.000Z');
+  const second = await buildEvidenceManifest('a,b\n1,3\n', 'model-a', '2026-09-26T20:00:00.000Z');
+  assert.notEqual(first.csv_sha256, second.csv_sha256);
+  assert.notEqual(first.manifest_sha256, second.manifest_sha256);
 });

@@ -46,7 +46,7 @@ These checks are intentionally shown in the UI so judges and operators can see w
 
 [![Evidence guardrail tests](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml/badge.svg)](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml)
 
-The evidence policy is backed by **22/22 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, complete decision-trace output, and telemetry provenance.
+The evidence policy is backed by **24/24 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, decision traces, telemetry provenance, and manifest integrity.
 
 Run locally:
 
@@ -64,13 +64,25 @@ Telemetry values shown in the guardrail trace come exclusively from the uploaded
 
 ### Reproducible performance snapshot
 
-On the included sanitized demo (24 rows, 26 numeric signals), 25 local base-analysis runs produced **1.119 ms p50** and **2.493 ms p95** on the documented Node.js runner. This measures deterministic CSV preprocessing and baseline-report generation only; it does not include network calls to Nemotron or Tavily.
+On the included sanitized demo (24 rows, 26 numeric signals), 25 local base-analysis runs produced **3.384 ms p50** and **12.549 ms p95** on the documented Node.js runner. This includes deterministic CSV preprocessing, baseline-report generation and SHA-256 manifest creation; it does not include network calls to Nemotron or Tavily.
 
 ```bash
 node scripts/benchmark.mjs 25
 ```
 
 See **[BENCHMARK.md](BENCHMARK.md)** for the measurement record and limitations.
+
+### Tamper-evident evidence manifest
+
+Every report contains an `Evidence manifest` with the SHA-256 hash of the exact uploaded CSV bytes, the exact Nemotron model identifier, generation timestamp, guardrail ruleset version, and a second SHA-256 digest covering those fields. This makes the evidence identity and decision policy attributable without claiming that AeroSage is a certified chain-of-custody system.
+
+Reproduce the headline adversarial verdict through the same production deterministic path:
+
+```bash
+node scripts/reproduce-magnetic-verdict.mjs
+```
+
+The command exits non-zero unless the committed demo still produces `Magnetic disturbance — 88% → REJECTED` with zero magnetic episodes and a valid CSV SHA-256.
 
 ## Architecture
 

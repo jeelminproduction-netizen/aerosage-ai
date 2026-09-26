@@ -17,8 +17,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 22
-# pass 22
+# tests 24
+# pass 24
 # fail 0
 ```
 
@@ -42,6 +42,8 @@ Expected result:
 | Confidence-cap audit | Unsupported 89% radio-loss candidate | Record 89% proposed → 30% final |
 | Telemetry provenance | Target-event values extracted from the CSV | Bind values to uploaded rows and deterministic preprocessing |
 | Model authority boundary | Read-only evidence packet | State that the model cannot modify measured values |
+| Evidence manifest integrity | Exact CSV bytes + model + timestamp + ruleset | Produce two attributable SHA-256 digests |
+| Tamper detection | One CSV value changes | Change both evidence and manifest digests |
 
 The remaining tests verify target-event selection, domain classification, confidence-cap application, evidence replacement, and guardrail accounting.
 
@@ -52,6 +54,14 @@ Generative models can produce technically plausible explanations that conflict w
 A concrete example from development was a high-confidence magnetic explanation despite zero magnetic episodes in the target cut-out rows. The current guardrail layer rejects that contradiction instead of displaying it as a likely cause.
 
 The UI presents this as an explicitly labeled adversarial control, not as a fabricated live model response. Live Nemotron decisions are recorded separately with proposed confidence, telemetry evidence, deterministic rule, final confidence and verdict.
+
+## Reproduce the representative verdict
+
+```bash
+node scripts/reproduce-magnetic-verdict.mjs
+```
+
+This command runs the committed sanitized CSV through the production baseline handler, checks the CSV digest and zero-event telemetry, and fails unless the 88% magnetic hypothesis is deterministically rejected.
 
 ## CI
 

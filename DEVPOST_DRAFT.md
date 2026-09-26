@@ -31,9 +31,11 @@ We also made external enrichment best-effort: the baseline report remains availa
 - Real Nebius/Nemotron inference integrated end-to-end
 - Tavily grounding integrated end-to-end
 - Evidence guardrails visibly filter unsupported AI claims
-- Reproducible **22/22 production-guardrail and provenance tests passed**
+- Reproducible **24/24 production-guardrail, provenance and integrity tests passed**
 - Auditable live decisions plus an adversarial control: `Magnetic disturbance 88% → REJECTED because magneto_episodes = 0`
-- Reproducible base-analysis benchmark on the included demo: 24 rows, 26 numeric signals, 1.119 ms p50 / 2.493 ms p95 across 25 local runs (Nemotron/Tavily network time excluded)
+- Reproducible base-analysis benchmark on the included demo: 24 rows, 26 numeric signals, 3.384 ms p50 / 12.549 ms p95 across 25 local runs, including SHA-256 manifest creation (Nemotron/Tavily network time excluded)
+- Tamper-evident evidence manifest: exact CSV SHA-256, Nemotron model, timestamp, versioned ruleset and covering manifest digest
+- One-command verdict replay: `node scripts/reproduce-magnetic-verdict.mjs`
 - Deployed public application
 - Demo based on real, sanitized drone telemetry rather than fabricated rows
 

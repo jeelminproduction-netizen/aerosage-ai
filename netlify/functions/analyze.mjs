@@ -1,9 +1,13 @@
+const GUARDRAIL_RULESET_VERSION = 'aerosage-guardrails-v1.2.0';
+const DEFAULT_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
+
 export default async (req) => {
   const requestStarted = performance.now();
   const url = new URL(req.url);
   const action = url.searchParams.get('action') || 'base';
   const vehicle = url.searchParams.get('vehicle') || '';
   const notes = url.searchParams.get('notes') || '';
+  const model = process.env.NEBIUS_MODEL || DEFAULT_NEMOTRON_MODEL;
 
   if (req.method !== 'POST') return reply({ error: 'POST only' }, 405);
 
@@ -22,12 +26,14 @@ export default async (req) => {
     const guardrails = deriveEvidenceGuardrails(packet);
     packet.evidence_guardrails = guardrails;
     const provenance = buildEvidenceProvenance(packet);
+    const manifest = await buildEvidenceManifest(csvText, model);
     baseline = {
       ...deterministicReport(packet),
       evidence_guardrails: guardrails.notes,
       validation_probe: guardrails.validation_probe,
       investigation_trace: [],
-      evidence_provenance: provenance
+      evidence_provenance: provenance,
+      evidence_manifest: manifest
     };
   } catch (e) {
     return reply({ error: safeMessage(e, 'Telemetry preprocessing failed.') }, 400);
@@ -49,8 +55,6 @@ export default async (req) => {
   try {
     const tavilyKey = process.env.TAVILY_API_KEY || '';
     const nebiusKey = process.env.NEBIUS_API_KEY || '';
-    const model = process.env.NEBIUS_MODEL || 'nvidia/nemotron-3-super-120b-a12b';
-
     const [grounding, ai] = await Promise.all([
       tavilyKey ? tavilySafe(tavilyKey, groundingQuery(vehicle, packet)) : Promise.resolve(null),
       nebiusKey ? nemotronSafe(nebiusKey, model, packet) : Promise.resolve(null)
@@ -67,6 +71,7 @@ export default async (req) => {
       web_status: grounding?.sources?.length ? 'live' : (tavilyKey ? 'unavailable' : 'not-configured'),
       web_grounding: grounding || null,
       evidence_provenance: baseline.evidence_provenance,
+      evidence_manifest: baseline.evidence_manifest,
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   } catch (e) {
@@ -80,6 +85,7 @@ export default async (req) => {
       web_status: 'unavailable',
       web_grounding: null,
       evidence_provenance: baseline.evidence_provenance,
+      evidence_manifest: baseline.evidence_manifest,
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
@@ -93,6 +99,25 @@ function reply(data, status = 200) {
 }
 function safeMessage(e, fallback='Error') {
   return String(e?.message || e || fallback).replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,240);
+}
+async function sha256Hex(value){
+  const bytes=new TextEncoder().encode(String(value));
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+async function buildEvidenceManifest(csvText, model, generatedAt=new Date().toISOString()){
+  const payload={
+    csv_sha256:await sha256Hex(csvText),
+    nemotron_model:model,
+    generated_at:generatedAt,
+    guardrail_ruleset:GUARDRAIL_RULESET_VERSION
+  };
+  return {
+    ...payload,
+    manifest_sha256:await sha256Hex(JSON.stringify(payload)),
+    hash_algorithm:'SHA-256',
+    integrity_scope:'Exact uploaded CSV bytes plus model, timestamp and guardrail ruleset.'
+  };
 }
 function parseCSV(text) {
   const matrix=[]; let row=[], cell='', quoted=false;

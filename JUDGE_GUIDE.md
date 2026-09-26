@@ -28,8 +28,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 22
-# pass 22
+# tests 24
+# pass 24
 # fail 0
 ```
 
@@ -64,9 +64,10 @@ That separation is the core product idea: generative reasoning is useful, but me
 - Runtime Tavily grounding.
 - Deterministic telemetry preprocessing and robust anomaly detection before the LLM call.
 - Post-validation of model output against target-event telemetry.
-- 22/22 zero-dependency automated guardrail tests passed in CI.
-- Reproducible local benchmark: 24 rows and 26 numeric signals, 1.119 ms p50 / 2.493 ms p95 for deterministic base analysis (25 runs; network enrichment excluded).
+- 24/24 zero-dependency automated guardrail and integrity tests passed in CI.
+- Reproducible local benchmark: 24 rows and 26 numeric signals, 3.384 ms p50 / 12.549 ms p95 for deterministic base analysis plus SHA-256 manifest creation (25 runs; network enrichment excluded).
 - A deterministic baseline remains usable if an external provider is unavailable.
+- Every run emits a SHA-256 evidence manifest covering the exact CSV, model, timestamp and versioned ruleset.
 
 ### Design
 - One investigation flow from CSV to ranked causes, evidence, timeline and next actions.
