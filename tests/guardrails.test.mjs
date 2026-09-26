@@ -12,11 +12,11 @@ source = source.replace(/export\s+default\s+async\s*\(req\)\s*=>\s*\{/, 'async f
 if (/\bexport\s+default\b/.test(source)) {
   throw new Error('Could not instrument analyze.mjs for guardrail tests. The handler signature changed.');
 }
-source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport };`;
+source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance };`;
 const sandbox = {};
 vm.createContext(sandbox);
 new vm.Script(source, { filename: sourcePath }).runInContext(sandbox);
-const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport } = sandbox.__AEROSAGE_TEST_API__;
+const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance } = sandbox.__AEROSAGE_TEST_API__;
 
 function incidentPacket(values = {}) {
   return {
@@ -196,4 +196,19 @@ test('records both proposed and final confidence for a capped hypothesis', () =>
   assert.equal(decision.verdict, 'CAPPED');
   assert.equal(decision.proposed_confidence, 0.89);
   assert.equal(decision.final_confidence, 0.30);
+});
+
+test('provenance binds authoritative values to uploaded CSV target rows', () => {
+  const provenance = buildEvidenceProvenance(incidentPacket());
+  const magnetic = provenance.authoritative_signals.find(item => item.field === 'magneto_episodes');
+  assert.equal(provenance.authority, 'uploaded telemetry');
+  assert.deepEqual(Array.from(provenance.target_rows), [42]);
+  assert.deepEqual(Array.from(magnetic.values), [0]);
+  assert.equal(magnetic.source, 'uploaded CSV target rows');
+});
+
+test('provenance explicitly keeps telemetry outside model authority', () => {
+  const provenance = buildEvidenceProvenance(incidentPacket());
+  assert.match(provenance.model_boundary, /read-only/);
+  assert.match(provenance.adjudication, /Deterministic rules/);
 });

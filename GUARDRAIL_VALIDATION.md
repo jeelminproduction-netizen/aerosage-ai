@@ -17,8 +17,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 20
-# pass 20
+# tests 22
+# pass 22
 # fail 0
 ```
 
@@ -40,6 +40,8 @@ Expected result:
 | Adversarial magnetic probe | `Magnetic disturbance — 88%` with `magneto_episodes = 0` | Publish a reproducible `REJECTED` trace |
 | Rejected-hypothesis audit | Contradictory candidate | Record evidence, rule and verdict |
 | Confidence-cap audit | Unsupported 89% radio-loss candidate | Record 89% proposed → 30% final |
+| Telemetry provenance | Target-event values extracted from the CSV | Bind values to uploaded rows and deterministic preprocessing |
+| Model authority boundary | Read-only evidence packet | State that the model cannot modify measured values |
 
 The remaining tests verify target-event selection, domain classification, confidence-cap application, evidence replacement, and guardrail accounting.
 

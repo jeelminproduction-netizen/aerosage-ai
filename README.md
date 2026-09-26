@@ -46,7 +46,7 @@ These checks are intentionally shown in the UI so judges and operators can see w
 
 [![Evidence guardrail tests](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml/badge.svg)](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml)
 
-The evidence policy is backed by **20/20 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, and complete decision-trace output.
+The evidence policy is backed by **22/22 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, complete decision-trace output, and telemetry provenance.
 
 Run locally:
 
@@ -57,6 +57,20 @@ node --test tests/guardrails.test.mjs
 See **[GUARDRAIL_VALIDATION.md](GUARDRAIL_VALIDATION.md)** for the full validation matrix and rationale.
 
 The live report exposes a compact **Investigation trace** for every Nemotron proposal: `telemetry evidence → hypothesis → deterministic rule → verdict`. Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself**.
+
+### Why the model cannot manufacture evidence
+
+Telemetry values shown in the guardrail trace come exclusively from the uploaded CSV and deterministic preprocessing. Nemotron receives the compact evidence packet read-only: it can propose explanations, but it cannot create or modify values such as `magneto_episodes`, battery percentage, Wi-Fi strength, satellite count, or motor cut-out events. After inference, deterministic rules compare every proposal with those authoritative values.
+
+### Reproducible performance snapshot
+
+On the included sanitized demo (24 rows, 26 numeric signals), 25 local base-analysis runs produced **1.119 ms p50** and **2.493 ms p95** on the documented Node.js runner. This measures deterministic CSV preprocessing and baseline-report generation only; it does not include network calls to Nemotron or Tavily.
+
+```bash
+node scripts/benchmark.mjs 25
+```
+
+See **[BENCHMARK.md](BENCHMARK.md)** for the measurement record and limitations.
 
 ## Architecture
 

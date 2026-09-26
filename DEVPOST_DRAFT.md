@@ -31,8 +31,9 @@ We also made external enrichment best-effort: the baseline report remains availa
 - Real Nebius/Nemotron inference integrated end-to-end
 - Tavily grounding integrated end-to-end
 - Evidence guardrails visibly filter unsupported AI claims
-- Reproducible **20/20 production-guardrail tests passed**
+- Reproducible **22/22 production-guardrail and provenance tests passed**
 - Auditable live decisions plus an adversarial control: `Magnetic disturbance 88% → REJECTED because magneto_episodes = 0`
+- Reproducible base-analysis benchmark on the included demo: 24 rows, 26 numeric signals, 1.119 ms p50 / 2.493 ms p95 across 25 local runs (Nemotron/Tavily network time excluded)
 - Deployed public application
 - Demo based on real, sanitized drone telemetry rather than fabricated rows
 

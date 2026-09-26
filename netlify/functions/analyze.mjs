@@ -1,4 +1,5 @@
 export default async (req) => {
+  const requestStarted = performance.now();
   const url = new URL(req.url);
   const action = url.searchParams.get('action') || 'base';
   const vehicle = url.searchParams.get('vehicle') || '';
@@ -20,11 +21,13 @@ export default async (req) => {
     packet = buildEvidencePacket(rows, profiles, incidents, vehicle, notes);
     const guardrails = deriveEvidenceGuardrails(packet);
     packet.evidence_guardrails = guardrails;
+    const provenance = buildEvidenceProvenance(packet);
     baseline = {
       ...deterministicReport(packet),
       evidence_guardrails: guardrails.notes,
       validation_probe: guardrails.validation_probe,
-      investigation_trace: []
+      investigation_trace: [],
+      evidence_provenance: provenance
     };
   } catch (e) {
     return reply({ error: safeMessage(e, 'Telemetry preprocessing failed.') }, 400);
@@ -37,7 +40,8 @@ export default async (req) => {
       mode: 'baseline',
       ai_status: 'pending',
       web_status: 'pending',
-      web_grounding: null
+      web_grounding: null,
+      analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
 
@@ -61,7 +65,9 @@ export default async (req) => {
       ai_status: ai?.ok ? 'live' : (nebiusKey ? 'fallback' : 'not-configured'),
       ai_note: ai?.note || null,
       web_status: grounding?.sources?.length ? 'live' : (tavilyKey ? 'unavailable' : 'not-configured'),
-      web_grounding: grounding || null
+      web_grounding: grounding || null,
+      evidence_provenance: baseline.evidence_provenance,
+      analysis_performance: performanceSummary(packet, requestStarted)
     });
   } catch (e) {
     // Always HTTP 200 with the forensic baseline.
@@ -72,7 +78,9 @@ export default async (req) => {
       ai_status: 'fallback',
       ai_note: safeMessage(e, 'External enrichment unavailable this run.'),
       web_status: 'unavailable',
-      web_grounding: null
+      web_grounding: null,
+      evidence_provenance: baseline.evidence_provenance,
+      analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
 };
@@ -132,6 +140,14 @@ function buildEvidencePacket(rows, profiles, incidents, vehicle, notes){
 }
 function pickInteresting(r){return Object.fromEntries(Object.entries(r).filter(([k,v])=>v!==''&&(/date|time|product|model|battery|speed|alt|wifi|rssi|sat|gps|crash|alert|cut|emergency|angle|magnet|motor|temp|volt|current/i.test(k))).slice(0,28))}
 function round(n){return Math.round(n*1000)/1000}
+function performanceSummary(packet, started){
+  return {
+    elapsed_ms:round(performance.now()-started),
+    rows_processed:packet.metrics.rows,
+    numeric_signals_profiled:packet.metrics.numeric_columns,
+    incident_rows_ranked:packet.metrics.incident_rows
+  };
+}
 function deterministicReport(packet){
   const reasons=packet.incident_rows.flatMap(x=>x.reasons.map(r=>r.toLowerCase()));
   const cut=reasons.some(r=>r.includes('cut'));
@@ -183,6 +199,21 @@ function deriveEvidenceGuardrails(packet){
     reason:'The proposed cause contradicts measured target-event telemetry.'
   }:null;
   return {target_rows:rows.map(r=>r.row_index),blocked_domains:blocked,confidence_caps:capped,notes,validation_probe:validationProbe};
+}
+function buildEvidenceProvenance(packet){
+  const rows=primaryEventRows(packet);
+  const fields=['cutout_episodes','magneto_episodes','angle_episodes','critical_batt_episodes','low_batt_episodes','battery_min_pct','wifi_weakest_dbm','sat_median'];
+  const authoritativeSignals=fields.map(field=>{
+    const values=rows.map(row=>row.values?.[field]).filter(value=>value!==undefined&&value!==null&&value!=='').map(value=>num(value)??value);
+    return values.length?{field,values,source:'uploaded CSV target rows',computed_by:'deterministic preprocessor'}:null;
+  }).filter(Boolean);
+  return {
+    authority:'uploaded telemetry',
+    target_rows:rows.map(row=>row.row_index),
+    authoritative_signals:authoritativeSignals,
+    model_boundary:'Nemotron receives this evidence packet read-only and cannot create or modify telemetry values.',
+    adjudication:'Deterministic rules evaluate model hypotheses against these signals after inference.'
+  };
 }
 function hypothesisDomain(text){
   const t=String(text||'').toLowerCase();
