@@ -35,7 +35,7 @@ const output = {
   incident_rows: last.metrics.incident_rows,
   p50_ms: Number(percentile(0.50).toFixed(3)),
   p95_ms: Number(percentile(0.95).toFixed(3)),
-  guardrail_tests: 24,
+  guardrail_tests: 30,
 };
 
 console.log(JSON.stringify(output, null, 2));

@@ -17,8 +17,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 24
-# pass 24
+# tests 30
+# pass 30
 # fail 0
 ```
 
@@ -40,10 +40,14 @@ Expected result:
 | Adversarial magnetic probe | `Magnetic disturbance — 88%` with `magneto_episodes = 0` | Publish a reproducible `REJECTED` trace |
 | Rejected-hypothesis audit | Contradictory candidate | Record evidence, rule and verdict |
 | Confidence-cap audit | Unsupported 89% radio-loss candidate | Record 89% proposed → 30% final |
+| Decision Ledger rejection | Magnetic candidate conflicts with a zero-event field | Record target-row input, authoritative-source vote, blocking-rule vote and suppression reason |
+| Decision Ledger restoration | Model proposals omit explicit propulsion evidence | Record deterministic restoration and final rank |
 | Telemetry provenance | Target-event values extracted from the CSV | Bind values to uploaded rows and deterministic preprocessing |
 | Model authority boundary | Read-only evidence packet | State that the model cannot modify measured values |
 | Evidence manifest integrity | Exact CSV bytes + model + timestamp + ruleset | Produce two attributable SHA-256 digests |
 | Tamper detection | One CSV value changes | Change both evidence and manifest digests |
+| Deterministic replay stability | Same CSV and same ruleset | Produce the same verdict SHA-256 |
+| Replay mismatch | CSV identity or covered verdict changes | Return `MISMATCH` instead of claiming reproducibility |
 
 The remaining tests verify target-event selection, domain classification, confidence-cap application, evidence replacement, and guardrail accounting.
 
@@ -53,7 +57,7 @@ Generative models can produce technically plausible explanations that conflict w
 
 A concrete example from development was a high-confidence magnetic explanation despite zero magnetic episodes in the target cut-out rows. The current guardrail layer rejects that contradiction instead of displaying it as a likely cause.
 
-The UI presents this as an explicitly labeled adversarial control, not as a fabricated live model response. Live Nemotron decisions are recorded separately with proposed confidence, telemetry evidence, deterministic rule, final confidence and verdict.
+The UI presents this as an explicitly labeled adversarial control, not as a fabricated live model response. Live Nemotron decisions are recorded separately with proposed confidence, telemetry evidence, deterministic rule, final confidence and verdict. The versioned Decision Ledger adds the exact telemetry inputs, rule votes, final rank, and the reason each competing candidate was suppressed or limited.
 
 ## Reproduce the representative verdict
 
@@ -61,7 +65,7 @@ The UI presents this as an explicitly labeled adversarial control, not as a fabr
 node scripts/reproduce-magnetic-verdict.mjs
 ```
 
-This command runs the committed sanitized CSV through the production baseline handler, checks the CSV digest and zero-event telemetry, and fails unless the 88% magnetic hypothesis is deterministically rejected.
+This command runs the committed sanitized CSV through the production baseline handler, checks the CSV digest and zero-event telemetry, then calls the deterministic replay path and fails unless the 88% magnetic hypothesis is rejected and the replay fingerprint is an exact match.
 
 ## CI
 

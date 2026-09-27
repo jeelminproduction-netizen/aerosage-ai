@@ -12,8 +12,10 @@ Open **https://aerosage-ai.netlify.app**.
 2. Run the forensic analysis.
 3. Notice that the deterministic baseline is available independently of external AI enrichment.
 4. Inspect the live Nemotron hypotheses.
-5. Inspect **Evidence guardrails** to see which model claims were rejected or confidence-capped by telemetry.
-6. Inspect the Tavily technical sources used for grounding.
+5. Inspect **Decision Ledger** to see the measured fields, rule votes, final rank and suppression reason for every candidate.
+6. Click **Replay this incident** and verify that the deterministic verdict SHA-256 returns `MATCH` without invoking Nemotron or Tavily.
+7. Inspect **Evidence guardrails** to see which model claims were rejected or confidence-capped by telemetry.
+8. Inspect the Tavily technical sources used for grounding.
 
 The demo is intentionally designed so the LLM does **not** get the final word.
 
@@ -28,8 +30,8 @@ node --test tests/guardrails.test.mjs
 Expected result:
 
 ```text
-# tests 24
-# pass 24
+# tests 30
+# pass 30
 # fail 0
 ```
 
@@ -64,10 +66,12 @@ That separation is the core product idea: generative reasoning is useful, but me
 - Runtime Tavily grounding.
 - Deterministic telemetry preprocessing and robust anomaly detection before the LLM call.
 - Post-validation of model output against target-event telemetry.
-- 24/24 zero-dependency automated guardrail and integrity tests passed in CI.
-- Reproducible local benchmark: 24 rows and 26 numeric signals, 3.384 ms p50 / 12.549 ms p95 for deterministic base analysis plus SHA-256 manifest creation (25 runs; network enrichment excluded).
+- 30/30 zero-dependency automated guardrail, Decision Ledger, replay and integrity tests passed in CI.
+- Reproducible local benchmark: 24 rows and 26 numeric signals, 1.709 ms p50 / 3.366 ms p95 for deterministic base analysis, Decision Ledger and SHA-256 manifest/replay creation (25 runs; network enrichment excluded).
 - A deterministic baseline remains usable if an external provider is unavailable.
 - Every run emits a SHA-256 evidence manifest covering the exact CSV, model, timestamp and versioned ruleset.
+- Every candidate emits a Decision Ledger record with target-row inputs, deterministic rule votes and a suppression/retention explanation.
+- The live replay control proves that identical CSV bytes and ruleset reproduce the same deterministic verdict fingerprint without model or search calls.
 
 ### Design
 - One investigation flow from CSV to ranked causes, evidence, timeline and next actions.

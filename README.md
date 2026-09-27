@@ -29,6 +29,8 @@ AeroSage never lets the LLM replace the underlying evidence. It produces a deter
 - Uses `nvidia/nemotron-3-super-120b-a12b` via Nebius Token Factory
 - Uses Tavily for optional technical web grounding
 - Applies evidence guardrails to remove or cap unsupported AI claims
+- Emits a versioned Decision Ledger with telemetry inputs, rule votes and suppression reasons
+- Replays the same CSV through a deterministic-only endpoint and verifies the verdict fingerprint
 - Produces a ranked incident report with confidence, evidence, timeline and recommended next actions
 
 ## Evidence guardrails
@@ -46,7 +48,7 @@ These checks are intentionally shown in the UI so judges and operators can see w
 
 [![Evidence guardrail tests](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml/badge.svg)](https://github.com/jeelminproduction-netizen/aerosage-ai/actions/workflows/guardrails.yml)
 
-The evidence policy is backed by **24/24 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, decision traces, telemetry provenance, and manifest integrity.
+The evidence policy is backed by **30/30 zero-dependency automated tests passed** against the guardrail functions used by the production backend. The suite covers rejected magnetic/attitude false positives, confidence caps for unsupported battery/radio/GPS explanations, propulsion preservation, deterministic risk protection, Decision Ledger contents, replay fingerprints, telemetry provenance, and manifest integrity.
 
 Run locally:
 
@@ -58,13 +60,15 @@ See **[GUARDRAIL_VALIDATION.md](GUARDRAIL_VALIDATION.md)** for the full validati
 
 The live report exposes a compact **Investigation trace** for every Nemotron proposal: `telemetry evidence → hypothesis → deterministic rule → verdict`. Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself**.
 
+The adjacent **Decision Ledger** makes that trace machine-auditable. Each candidate records the exact target-row fields used, every deterministic rule vote, proposed and final confidence, final rank, and a plain-language reason when a competing explanation was rejected or confidence-capped.
+
 ### Why the model cannot manufacture evidence
 
 Telemetry values shown in the guardrail trace come exclusively from the uploaded CSV and deterministic preprocessing. Nemotron receives the compact evidence packet read-only: it can propose explanations, but it cannot create or modify values such as `magneto_episodes`, battery percentage, Wi-Fi strength, satellite count, or motor cut-out events. After inference, deterministic rules compare every proposal with those authoritative values.
 
 ### Reproducible performance snapshot
 
-On the included sanitized demo (24 rows, 26 numeric signals), 25 local base-analysis runs produced **3.384 ms p50** and **12.549 ms p95** on the documented Node.js runner. This includes deterministic CSV preprocessing, baseline-report generation and SHA-256 manifest creation; it does not include network calls to Nemotron or Tavily.
+On the included sanitized demo (24 rows, 26 numeric signals), 25 local base-analysis runs produced **1.709 ms p50** and **3.366 ms p95** on the documented Node.js runner. This includes deterministic CSV preprocessing, Decision Ledger generation, baseline-report generation, and both SHA-256 manifest/replay digests; it does not include network calls to Nemotron or Tavily.
 
 ```bash
 node scripts/benchmark.mjs 25
@@ -82,7 +86,9 @@ Reproduce the headline adversarial verdict through the same production determini
 node scripts/reproduce-magnetic-verdict.mjs
 ```
 
-The command exits non-zero unless the committed demo still produces `Magnetic disturbance — 88% → REJECTED` with zero magnetic episodes and a valid CSV SHA-256.
+The command exits non-zero unless the committed demo still produces `Magnetic disturbance — 88% → REJECTED` with zero magnetic episodes, a valid CSV SHA-256, and an exact deterministic replay match.
+
+The live interface exposes the same mechanism through **Replay this incident**. The server reprocesses the exact CSV without invoking Nemotron or Tavily and compares a stable SHA-256 verdict fingerprint covering the CSV identity, guardrail ruleset, deterministic causes, constraints, validation probe, and Decision Ledger.
 
 ## Architecture
 

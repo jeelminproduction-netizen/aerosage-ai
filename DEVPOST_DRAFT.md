@@ -8,7 +8,7 @@ Machine failures leave evidence in telemetry, but turning raw logs into a defens
 
 AeroSage ingests telemetry CSVs, profiles signals, detects statistical anomalies and safety events, reconstructs the incident sequence, and builds an evidence-first baseline. NVIDIA Nemotron 3 Super then ranks competing hypotheses through Nebius Token Factory, while Tavily can ground the investigation in technical documentation.
 
-The differentiator is an evidence-guardrail layer: LLM hypotheses are post-validated against the target-event telemetry before they can be ranked. Unsupported explanations are removed or confidence-capped. The UI exposes a complete trace — **telemetry evidence → Nemotron hypothesis → deterministic rule → verdict** — with the message: **AI proposes · telemetry decides.** Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself.**
+The differentiator is an evidence-guardrail layer: LLM hypotheses are post-validated against the target-event telemetry before they can be ranked. Unsupported explanations are removed or confidence-capped. The UI exposes a complete trace — **telemetry evidence → Nemotron hypothesis → deterministic rule → verdict** — plus a versioned Decision Ledger containing the exact telemetry inputs, rule votes, final rank and suppression reason. A live replay control proves that the same CSV and ruleset produce the same deterministic verdict fingerprint without invoking Nemotron or Tavily. The message is: **AI proposes · telemetry decides.** Nemotron proposes hypotheses; deterministic telemetry rules adjudicate them — **the model never validates itself.**
 
 ## How we built it
 
@@ -31,11 +31,11 @@ We also made external enrichment best-effort: the baseline report remains availa
 - Real Nebius/Nemotron inference integrated end-to-end
 - Tavily grounding integrated end-to-end
 - Evidence guardrails visibly filter unsupported AI claims
-- Reproducible **24/24 production-guardrail, provenance and integrity tests passed**
+- Reproducible **30/30 production-guardrail, Decision Ledger, replay, provenance and integrity tests passed**
 - Auditable live decisions plus an adversarial control: `Magnetic disturbance 88% → REJECTED because magneto_episodes = 0`
-- Reproducible base-analysis benchmark on the included demo: 24 rows, 26 numeric signals, 3.384 ms p50 / 12.549 ms p95 across 25 local runs, including SHA-256 manifest creation (Nemotron/Tavily network time excluded)
+- Reproducible base-analysis benchmark on the included demo: 24 rows, 26 numeric signals, 1.709 ms p50 / 3.366 ms p95 across 25 local runs, including Decision Ledger and SHA-256 manifest/replay creation (Nemotron/Tavily network time excluded)
 - Tamper-evident evidence manifest: exact CSV SHA-256, Nemotron model, timestamp, versioned ruleset and covering manifest digest
-- One-command verdict replay: `node scripts/reproduce-magnetic-verdict.mjs`
+- One-command and one-click deterministic verdict replay with exact SHA-256 match verification
 - Deployed public application
 - Demo based on real, sanitized drone telemetry rather than fabricated rows
 

@@ -1,6 +1,6 @@
 # AeroSage — Reproducible performance snapshot
 
-This benchmark measures the deterministic path that parses the CSV, profiles numeric signals, detects incidents, derives evidence guardrails, builds provenance, creates the SHA-256 evidence manifest, and returns the baseline report. It deliberately excludes Nemotron and Tavily network calls so the result can be reproduced without API keys or provider variability.
+This benchmark measures the deterministic path that parses the CSV, profiles numeric signals, detects incidents, derives evidence guardrails, builds provenance, creates the Decision Ledger, computes the SHA-256 evidence manifest and stable replay proof, and returns the baseline report. It deliberately excludes Nemotron and Tavily network calls so the result can be reproduced without API keys or provider variability.
 
 ## Run it
 
@@ -14,11 +14,11 @@ The optional argument is the number of measured runs. One warm-up run is perform
 
 ## Recorded snapshot
 
-Measured on 2026-09-26 with Node.js v24.19.0:
+Measured on 2026-09-27 with Node.js v24.19.0:
 
 | Dataset | Runs | Rows | Numeric signals | Incident rows | p50 | p95 |
 |---|---:|---:|---:|---:|---:|---:|
-| `demo/anafi_incidents_sanitized.csv` | 25 | 24 | 26 | 12 | 3.384 ms | 12.549 ms |
+| `demo/anafi_incidents_sanitized.csv` | 25 | 24 | 26 | 12 | 1.709 ms | 3.366 ms |
 
 ## Interpretation
 

@@ -12,11 +12,11 @@ source = source.replace(/export\s+default\s+async\s*\(req\)\s*=>\s*\{/, 'async f
 if (/\bexport\s+default\b/.test(source)) {
   throw new Error('Could not instrument analyze.mjs for guardrail tests. The handler signature changed.');
 }
-source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, sha256Hex };`;
+source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, sha256Hex };`;
 const sandbox = { crypto: globalThis.crypto, TextEncoder };
 vm.createContext(sandbox);
 new vm.Script(source, { filename: sourcePath }).runInContext(sandbox);
-const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, sha256Hex } = sandbox.__AEROSAGE_TEST_API__;
+const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, sha256Hex } = sandbox.__AEROSAGE_TEST_API__;
 
 function incidentPacket(values = {}) {
   return {
@@ -198,6 +198,44 @@ test('records both proposed and final confidence for a capped hypothesis', () =>
   assert.equal(decision.final_confidence, 0.30);
 });
 
+test('decision ledger records measured inputs and every rule vote for a rejection', () => {
+  const out = checkedReport(incidentPacket(), [
+    { cause: 'Magnetic disturbance', confidence: 0.88, why: 'Compass interference.' },
+    { cause: 'Propulsion / motor cut-out event', confidence: 0.72, why: 'Explicit cut-out.' },
+  ]);
+  const entry = out.decision_ledger.entries.find(item => item.domain === 'magnetic');
+  assert.equal(out.decision_ledger.schema, 'aerosage-decision-ledger-v1');
+  assert.equal(entry.verdict, 'REJECTED');
+  assert.equal(entry.telemetry_inputs[0].field, 'magneto_episodes');
+  assert.equal(entry.telemetry_inputs[0].samples[0].value, 0);
+  assert.ok(entry.rule_votes.some(vote => vote.rule_id === 'CSV_EVIDENCE_AUTHORITY' && vote.vote === 'AUTHORITATIVE'));
+  assert.ok(entry.rule_votes.some(vote => vote.rule_id === 'MAGNETIC_ZERO_EVENT_BLOCK' && vote.vote === 'BLOCK'));
+  assert.match(entry.resolution, /Suppressed because/);
+});
+
+test('decision ledger explains a capped competing hypothesis', () => {
+  const out = checkedReport(incidentPacket(), [
+    { cause: 'Radio link loss', confidence: 0.89, why: 'Signal loss.' },
+    { cause: 'Propulsion / motor cut-out event', confidence: 0.72, why: 'Explicit cut-out.' },
+  ]);
+  const entry = out.decision_ledger.entries.find(item => item.domain === 'radio');
+  assert.equal(entry.verdict, 'CAPPED');
+  assert.equal(entry.final_confidence, 0.30);
+  assert.ok(entry.rule_votes.some(vote => vote.rule_id === 'RADIO_THRESHOLD_CAP' && vote.vote === 'CAP'));
+  assert.ok(out.decision_ledger.suppressed_competitors.some(item => item.hypothesis === 'Radio link loss'));
+});
+
+test('decision ledger records deterministic restoration when proposals omit propulsion', () => {
+  const out = checkedReport(incidentPacket(), [
+    { cause: 'Magnetic disturbance', confidence: 0.95, why: 'Compass interference.' },
+    { cause: 'Attitude instability', confidence: 0.90, why: 'Orientation failure.' },
+  ]);
+  const restored = out.decision_ledger.entries.find(item => item.proposal_source === 'deterministic-baseline' && item.domain === 'propulsion');
+  assert.equal(restored.verdict, 'ACCEPTED');
+  assert.equal(restored.rule_votes[1].vote, 'RESTORE');
+  assert.match(restored.resolution, /Restored from the deterministic baseline/);
+});
+
 test('provenance binds authoritative values to uploaded CSV target rows', () => {
   const provenance = buildEvidenceProvenance(incidentPacket());
   const magnetic = provenance.authoritative_signals.find(item => item.field === 'magneto_episodes');
@@ -218,7 +256,7 @@ test('evidence manifest hashes the exact CSV bytes and identifies the ruleset', 
   const manifest = await buildEvidenceManifest(csv, 'nvidia/test-model', '2026-09-26T20:00:00.000Z');
   assert.equal(manifest.csv_sha256, await sha256Hex(csv));
   assert.equal(manifest.nemotron_model, 'nvidia/test-model');
-  assert.equal(manifest.guardrail_ruleset, 'aerosage-guardrails-v1.2.0');
+  assert.equal(manifest.guardrail_ruleset, 'aerosage-guardrails-v1.3.0');
   assert.match(manifest.manifest_sha256, /^[a-f0-9]{64}$/);
 });
 
@@ -227,4 +265,33 @@ test('evidence manifest digest changes when any covered field changes', async ()
   const second = await buildEvidenceManifest('a,b\n1,3\n', 'model-a', '2026-09-26T20:00:00.000Z');
   assert.notEqual(first.csv_sha256, second.csv_sha256);
   assert.notEqual(first.manifest_sha256, second.manifest_sha256);
+});
+
+test('deterministic replay fingerprint is stable for identical evidence and verdict', async () => {
+  const packet = incidentPacket();
+  const report = checkedReport(packet, deterministicReport(packet).likely_causes);
+  const first = await buildDeterministicReplayProof('a'.repeat(64), report);
+  const second = await buildDeterministicReplayProof('a'.repeat(64), report);
+  assert.equal(first.verdict_sha256, second.verdict_sha256);
+  assert.equal(first.execution, 'deterministic-only; Nemotron and Tavily are not invoked');
+});
+
+test('deterministic replay fingerprint changes when the CSV identity changes', async () => {
+  const packet = incidentPacket();
+  const report = checkedReport(packet, deterministicReport(packet).likely_causes);
+  const first = await buildDeterministicReplayProof('a'.repeat(64), report);
+  const second = await buildDeterministicReplayProof('b'.repeat(64), report);
+  assert.notEqual(first.verdict_sha256, second.verdict_sha256);
+});
+
+test('replay verification reports exact matches and mismatches', async () => {
+  const packet = incidentPacket();
+  const report = checkedReport(packet, deterministicReport(packet).likely_causes);
+  const proof = await buildDeterministicReplayProof('a'.repeat(64), report);
+  const matching = verifyReplay(proof.verdict_sha256, proof);
+  const mismatch = verifyReplay('f'.repeat(64), proof);
+  assert.equal(matching.status, 'MATCH');
+  assert.equal(matching.exact_match, true);
+  assert.equal(mismatch.status, 'MISMATCH');
+  assert.equal(mismatch.exact_match, false);
 });

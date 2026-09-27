@@ -1,4 +1,4 @@
-const GUARDRAIL_RULESET_VERSION = 'aerosage-guardrails-v1.2.0';
+const GUARDRAIL_RULESET_VERSION = 'aerosage-guardrails-v1.3.0';
 const DEFAULT_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
 
 export default async (req) => {
@@ -27,14 +27,19 @@ export default async (req) => {
     packet.evidence_guardrails = guardrails;
     const provenance = buildEvidenceProvenance(packet);
     const manifest = await buildEvidenceManifest(csvText, model);
+    const deterministic = deterministicReport(packet);
+    const adjudicated = applyEvidenceGuardrails({
+      ...deterministic,
+      likely_causes: deterministic.likely_causes.map(cause=>({...cause}))
+    }, packet, deterministic, 'deterministic-baseline');
     baseline = {
-      ...deterministicReport(packet),
+      ...adjudicated,
       evidence_guardrails: guardrails.notes,
       validation_probe: guardrails.validation_probe,
-      investigation_trace: [],
       evidence_provenance: provenance,
       evidence_manifest: manifest
     };
+    baseline.deterministic_replay = await buildDeterministicReplayProof(manifest.csv_sha256, baseline);
   } catch (e) {
     return reply({ error: safeMessage(e, 'Telemetry preprocessing failed.') }, 400);
   }
@@ -47,6 +52,20 @@ export default async (req) => {
       ai_status: 'pending',
       web_status: 'pending',
       web_grounding: null,
+      analysis_performance: performanceSummary(packet, requestStarted)
+    });
+  }
+
+  if (action === 'replay') {
+    const replayVerification = verifyReplay(url.searchParams.get('expected') || '', baseline.deterministic_replay);
+    return reply({
+      ...baseline,
+      metrics: packet.metrics,
+      mode: 'replay',
+      ai_status: 'not-invoked',
+      web_status: 'not-invoked',
+      web_grounding: null,
+      replay_verification: replayVerification,
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
@@ -72,6 +91,7 @@ export default async (req) => {
       web_grounding: grounding || null,
       evidence_provenance: baseline.evidence_provenance,
       evidence_manifest: baseline.evidence_manifest,
+      deterministic_replay: baseline.deterministic_replay,
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   } catch (e) {
@@ -86,6 +106,7 @@ export default async (req) => {
       web_grounding: null,
       evidence_provenance: baseline.evidence_provenance,
       evidence_manifest: baseline.evidence_manifest,
+      deterministic_replay: baseline.deterministic_replay,
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
@@ -262,9 +283,135 @@ function guardrailRule(domain, verdict, cap){
   if(verdict==='CAPPED')return `Cap unsupported ${domain} confidence at ${Math.round(cap*100)}%.`;
   return domain==='propulsion'?'Preserve explicit propulsion evidence in the ranked result.':'Allow when no deterministic evidence rule is violated.';
 }
-function applyEvidenceGuardrails(report, packet, fallback){
+function telemetryInputsForDomain(packet, domain){
+  const fieldsByDomain={
+    magnetic:['magneto_episodes'],
+    attitude:['angle_episodes'],
+    battery:['critical_batt_episodes','low_batt_episodes','battery_min_pct'],
+    radio:['wifi_weakest_dbm'],
+    gps:['sat_median'],
+    propulsion:['cutout_episodes']
+  };
+  const rows=primaryEventRows(packet);
+  const fields=fieldsByDomain[domain]||['cutout_episodes','battery_min_pct','wifi_weakest_dbm','sat_median'];
+  return fields.map(field=>{
+    const samples=rows.map(row=>({row_index:row.row_index,value:row.values?.[field]})).filter(sample=>sample.value!==undefined&&sample.value!==null&&sample.value!=='');
+    return samples.length?{field,samples,source:'uploaded CSV target rows'}:null;
+  }).filter(Boolean);
+}
+function ruleIdForDomain(domain, verdict){
+  if(domain==='magnetic')return 'MAGNETIC_ZERO_EVENT_BLOCK';
+  if(domain==='attitude')return 'ATTITUDE_ZERO_EVENT_BLOCK';
+  if(domain==='battery')return 'BATTERY_DEPLETION_CAP';
+  if(domain==='radio')return 'RADIO_THRESHOLD_CAP';
+  if(domain==='gps')return 'GPS_SATELLITE_CAP';
+  if(domain==='propulsion')return 'EXPLICIT_CUTOUT_PRESERVE';
+  return verdict==='ACCEPTED'?'UNCONTRADICTED_HYPOTHESIS':'DOMAIN_EVIDENCE_CHECK';
+}
+function decisionResolution(decision){
+  if(decision.restored)return decision.domain==='propulsion'?'Restored from the deterministic baseline because explicit propulsion evidence must remain represented when competing proposals are rejected.':'Added from the deterministic baseline to keep the final candidate set anchored to evidence-backed causes.';
+  if(decision.verdict==='REJECTED')return `Suppressed because ${decision.telemetry_evidence} The candidate conflicts with the versioned ${GUARDRAIL_RULESET_VERSION} policy.`;
+  if(decision.verdict==='CAPPED')return `Retained as a competing hypothesis, but reduced to ${Math.round((decision.final_confidence||0)*100)}% because the telemetry does not support the proposed confidence.`;
+  return 'Retained because no deterministic telemetry rule contradicted the candidate.';
+}
+function buildDecisionLedger(trace, packet, finalCauses, proposalSource='nemotron', context={}){
+  const ranked=finalCauses||[];
+  const entries=(trace||[]).map((decision,index)=>{
+    const finalRank=ranked.findIndex(cause=>cause.cause===decision.hypothesis);
+    const domainRuleVote=decision.verdict==='REJECTED'?'BLOCK':decision.verdict==='CAPPED'?'CAP':decision.restored?'RESTORE':'ALLOW';
+    return {
+      decision_id:`D-${String(index+1).padStart(2,'0')}`,
+      hypothesis:decision.hypothesis,
+      domain:decision.domain,
+      proposal_source:decision.proposal_source||proposalSource,
+      proposed_confidence:decision.proposed_confidence,
+      final_confidence:decision.final_confidence,
+      final_rank:finalRank>=0?finalRank+1:null,
+      telemetry_inputs:telemetryInputsForDomain(packet,decision.domain),
+      rule_votes:[
+        {
+          rule_id:'CSV_EVIDENCE_AUTHORITY',
+          vote:'AUTHORITATIVE',
+          rationale:'Only values extracted from uploaded target rows may adjudicate a hypothesis.'
+        },
+        {
+          rule_id:ruleIdForDomain(decision.domain,decision.verdict),
+          vote:domainRuleVote,
+          rationale:decision.rule,
+          evidence:decision.telemetry_evidence
+        }
+      ],
+      verdict:decision.verdict,
+      resolution:decisionResolution(decision)
+    };
+  });
+  const suppressed=entries.filter(entry=>entry.verdict==='REJECTED'||entry.verdict==='CAPPED').map(entry=>({
+    decision_id:entry.decision_id,
+    hypothesis:entry.hypothesis,
+    verdict:entry.verdict,
+    reason:entry.resolution
+  }));
+  return {
+    schema:'aerosage-decision-ledger-v1',
+    ruleset:GUARDRAIL_RULESET_VERSION,
+    authority:'deterministic telemetry post-validator',
+    target_rows:primaryEventRows(packet).map(row=>row.row_index),
+    summary:{
+      evaluated:entries.length,
+      accepted:entries.filter(entry=>entry.verdict==='ACCEPTED').length,
+      capped:entries.filter(entry=>entry.verdict==='CAPPED').length,
+      rejected:entries.filter(entry=>entry.verdict==='REJECTED').length
+    },
+    global_rule_votes:[{
+      rule_id:'DETERMINISTIC_RISK_FLOOR',
+      vote:context.risk_floor_applied?'PRESERVE':'PASS',
+      rationale:`Final risk ${context.final_risk||'unknown'} cannot be lower than deterministic baseline risk ${context.baseline_risk||'unknown'}.`
+    }],
+    entries,
+    suppressed_competitors:suppressed
+  };
+}
+async function buildDeterministicReplayProof(csvSha256, report){
+  const payload={
+    schema:'aerosage-replay-v1',
+    csv_sha256:csvSha256,
+    guardrail_ruleset:GUARDRAIL_RULESET_VERSION,
+    verdict:{
+      risk_level:report.risk_level,
+      confidence:report.confidence,
+      likely_causes:(report.likely_causes||[]).map(cause=>({cause:cause.cause,confidence:cause.confidence,why:cause.why})),
+      evidence_guardrails:report.evidence_guardrails||[],
+      validation_probe:report.validation_probe||null,
+      decision_ledger:report.decision_ledger||null
+    }
+  };
+  return {
+    schema:payload.schema,
+    csv_sha256:csvSha256,
+    guardrail_ruleset:GUARDRAIL_RULESET_VERSION,
+    verdict_sha256:await sha256Hex(JSON.stringify(payload)),
+    risk_level:report.risk_level,
+    confidence:report.confidence,
+    primary_cause:report.likely_causes?.[0]?.cause||null,
+    execution:'deterministic-only; Nemotron and Tavily are not invoked'
+  };
+}
+function verifyReplay(expected, proof){
+  const normalized=/^[a-f0-9]{64}$/i.test(String(expected||''))?String(expected).toLowerCase():'';
+  const actual=String(proof?.verdict_sha256||'').toLowerCase();
+  const status=!normalized?'NO_REFERENCE':normalized===actual?'MATCH':'MISMATCH';
+  return {
+    status,
+    expected_verdict_sha256:normalized||null,
+    actual_verdict_sha256:actual||null,
+    exact_match:status==='MATCH',
+    statement:status==='MATCH'?'Same CSV + same guardrail ruleset produced the same deterministic verdict.':status==='MISMATCH'?'The replay fingerprint differs; inspect the CSV bytes or ruleset before trusting the comparison.':'No prior deterministic fingerprint was supplied for comparison.'
+  };
+}
+function applyEvidenceGuardrails(report, packet, fallback, proposalSource='nemotron'){
   const g=packet.evidence_guardrails||deriveEvidenceGuardrails(packet);
   let filtered=0;
+  let riskFloorApplied=false;
   let causes=(report.likely_causes||[]).map(c=>({...c}));
   const safe=[];
   const trace=[];
@@ -274,7 +421,7 @@ function applyEvidenceGuardrails(report, packet, fallback){
     const proposedConfidence=Number(c.confidence)||0;
     if((g.blocked_domains||[]).includes(d)){
       filtered++;
-      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:null,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'REJECTED'),verdict:'REJECTED'});
+      trace.push({hypothesis:c.cause,domain:d,proposal_source:proposalSource,proposed_confidence:proposedConfidence,final_confidence:null,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'REJECTED'),verdict:'REJECTED'});
       continue;
     }
     let cap=null;
@@ -283,18 +430,29 @@ function applyEvidenceGuardrails(report, packet, fallback){
     if(d==='battery' && /deplet|low battery|critical battery|exhaust|empty|state of charge/i.test(text))cap=g.confidence_caps?.battery_depletion;
     if(Number.isFinite(cap) && Number(c.confidence)>cap){
       c.confidence=cap; c.why=`${c.why} Confidence capped by contradictory/absent target-event telemetry.`.slice(0,320);filtered++;
-      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:cap,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'CAPPED',cap),verdict:'CAPPED'});
+      trace.push({hypothesis:c.cause,domain:d,proposal_source:proposalSource,proposed_confidence:proposedConfidence,final_confidence:cap,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'CAPPED',cap),verdict:'CAPPED'});
     }else{
-      trace.push({hypothesis:c.cause,domain:d,proposed_confidence:proposedConfidence,final_confidence:proposedConfidence,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'ACCEPTED'),verdict:'ACCEPTED'});
+      trace.push({hypothesis:c.cause,domain:d,proposal_source:proposalSource,proposed_confidence:proposedConfidence,final_confidence:proposedConfidence,telemetry_evidence:guardrailEvidence(d,g),rule:guardrailRule(d,'ACCEPTED'),verdict:'ACCEPTED'});
     }
     safe.push(c);
   }
   const hasPropulsion=safe.some(c=>hypothesisDomain(`${c.cause} ${c.why}`)==='propulsion');
-  if(!hasPropulsion && fallback.likely_causes?.[0])safe.push({...fallback.likely_causes[0]});
-  for(const c of fallback.likely_causes||[]){if(safe.length>=3)break;if(!safe.some(x=>x.cause===c.cause))safe.push({...c});}
+  if(!hasPropulsion && fallback.likely_causes?.[0]){
+    const restored={...fallback.likely_causes[0]};
+    safe.push(restored);
+    trace.push({hypothesis:restored.cause,domain:hypothesisDomain(`${restored.cause} ${restored.why}`),proposal_source:'deterministic-baseline',proposed_confidence:null,final_confidence:restored.confidence,telemetry_evidence:guardrailEvidence('propulsion',g),rule:'Restore explicit propulsion evidence when every model proposal in that domain is absent or rejected.',verdict:'ACCEPTED',restored:true});
+  }
+  for(const c of fallback.likely_causes||[]){
+    if(safe.length>=3)break;
+    if(!safe.some(x=>x.cause===c.cause)){
+      safe.push({...c});
+      const domain=hypothesisDomain(`${c.cause} ${c.why}`);
+      trace.push({hypothesis:c.cause,domain,proposal_source:'deterministic-baseline',proposed_confidence:null,final_confidence:c.confidence,telemetry_evidence:guardrailEvidence(domain,g),rule:guardrailRule(domain,'ACCEPTED'),verdict:'ACCEPTED',restored:true});
+    }
+  }
   safe.sort((a,b)=>(b.confidence||0)-(a.confidence||0));
   report.likely_causes=safe.slice(0,3);
-  if(severityRank(report.risk_level)<severityRank(fallback.risk_level)){report.risk_level=fallback.risk_level;report.confidence=Math.max(report.confidence||0,fallback.confidence||0);filtered++;}
+  if(severityRank(report.risk_level)<severityRank(fallback.risk_level)){report.risk_level=fallback.risk_level;report.confidence=Math.max(report.confidence||0,fallback.confidence||0);filtered++;riskFloorApplied=true;}
   if(filtered>0){
     report.executive_summary=fallback.executive_summary+' Nemotron hypotheses were post-validated against target-event telemetry guardrails.';
     report.evidence=fallback.evidence;
@@ -303,6 +461,7 @@ function applyEvidenceGuardrails(report, packet, fallback){
   report.guardrail_filtered=filtered;
   report.validation_probe=g.validation_probe||null;
   report.investigation_trace=trace;
+  report.decision_ledger=buildDecisionLedger(trace,packet,report.likely_causes,proposalSource,{risk_floor_applied:riskFloorApplied,baseline_risk:fallback.risk_level,final_risk:report.risk_level});
   return report;
 }
 function groundingQuery(vehicle, packet){
