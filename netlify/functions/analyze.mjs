@@ -5,8 +5,8 @@ export default async (req) => {
   const requestStarted = performance.now();
   const url = new URL(req.url);
   const action = url.searchParams.get('action') || 'base';
-  const vehicle = url.searchParams.get('vehicle') || '';
-  const notes = url.searchParams.get('notes') || '';
+  const vehicle = String(url.searchParams.get('vehicle') || '').trim().slice(0,160);
+  const notes = String(url.searchParams.get('notes') || '').trim().slice(0,1200);
   const model = process.env.NEBIUS_MODEL || DEFAULT_NEMOTRON_MODEL;
 
   if (req.method === 'GET' && action === 'health') return reply({status:'ok',service:'aerosage-analyze',ruleset:GUARDRAIL_RULESET_VERSION,model,provider_config:{nebius:Boolean(process.env.NEBIUS_API_KEY),tavily:Boolean(process.env.TAVILY_API_KEY)}});
@@ -117,7 +117,13 @@ function reply(data, status = 200) {
   let body;
   try { body = JSON.stringify(data); }
   catch { body = '{"error":"Response serialization failed."}'; status = 500; }
-  return new Response(body, { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  return new Response(body, { status, headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()'
+  } });
 }
 function safeMessage(e, fallback='Error') {
   return String(e?.message || e || fallback).replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,240);
