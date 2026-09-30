@@ -9,6 +9,7 @@ export default async (req) => {
   const notes = url.searchParams.get('notes') || '';
   const model = process.env.NEBIUS_MODEL || DEFAULT_NEMOTRON_MODEL;
 
+  if (req.method === 'GET' && action === 'health') return reply({status:'ok',service:'aerosage-analyze',ruleset:GUARDRAIL_RULESET_VERSION,model,provider_config:{nebius:Boolean(process.env.NEBIUS_API_KEY),tavily:Boolean(process.env.TAVILY_API_KEY)}});
   if (req.method !== 'POST') return reply({ error: 'POST only' }, 405);
 
   let csvText = '';
