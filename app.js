@@ -1,11 +1,11 @@
 const app=document.querySelector('#app');
-let csvText='', fileName='', vehicle='Parrot Anafi', notes='Investigate abnormal motor shutdowns, battery events and flight-control anomalies.', result=null, loading=false, error='', replayState='idle', replayResult=null, replayError='';
+let csvText='', fileName='', vehicle='Parrot Anafi', notes='Investigate abnormal motor shutdowns, battery events and flight-control anomalies.', result=null, loading=false, error='', replayState='idle', replayResult=null, replayError='', systemStatus='checking';
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 function render(){
-  app.innerHTML=`<div class="app-shell"><nav><div class="brand"><div class="brandmark">◉</div><span>AeroSage</span><em>AI</em></div><div class="nav-badges"><span>NEBIUS</span><span>NVIDIA NEMOTRON</span></div></nav><main>
+  app.innerHTML=`<div class="app-shell"><nav><div class="brand"><div class="brandmark">◉</div><span>AeroSage</span><em>AI</em></div><div class="nav-badges"><span>NEBIUS</span><span>NVIDIA NEMOTRON</span><span class="status-badge ${systemStatus}">● ${String(systemStatus).toUpperCase()}</span></div></nav><main>
   <section class="hero"><div class="eyebrow">✣ AI TELEMETRY INCIDENT INVESTIGATOR</div><h1>Turn machine logs into<br><span>evidence you can act on.</span></h1><p>AeroSage profiles telemetry, detects anomalies, reconstructs incident sequences and enriches the evidence with Nemotron and Tavily without allowing provider failures to erase the forensic report.</p></section>
   <section class="workspace"><div class="panel upload-panel"><div class="panel-head"><div><span class="step">01</span><h2>Evidence intake</h2></div><span>♢</span></div>
-  <label class="dropzone"><input id="fileInput" type="file" accept=".csv,text/csv"><strong>${fileName?esc(fileName):'Drop a telemetry CSV'}</strong><small>${fileName?`${(csvText.length/1024).toFixed(1)} KB loaded locally`:'CSV · max 4 MB for this MVP'}</small></label>
+  <label class="dropzone" id="dropzone"><input id="fileInput" type="file" accept=".csv,text/csv" aria-label="Telemetry CSV file"><strong>${fileName?esc(fileName):'Drop a telemetry CSV'}</strong><small>${fileName?`${(csvText.length/1024).toFixed(1)} KB loaded locally`:'CSV · max 4 MB for this MVP'}</small></label>
   <button id="demoBtn" class="ghost">Load real sanitized drone incident demo ›</button>
   <div class="field-grid"><label>Vehicle / system<input id="vehicle" value="${esc(vehicle)}"></label><label>Investigation goal<textarea id="notes" rows="3">${esc(notes)}</textarea></label></div>
   <button id="runBtn" class="primary" ${!csvText||loading?'disabled':''}>${loading?'⌁ Investigating telemetry…':'✣ Run forensic analysis'}</button>${error?`<div class="error">ⓧ ${esc(error)}</div>`:''}</div>
@@ -60,14 +60,18 @@ function renderEvidenceManifest(r){
 function metric(v,l){return `<div class="metric"><strong>${Number(v||0)}</strong><span>${l}</span></div>`}
 function bind(){
   document.querySelector('#demoBtn')?.addEventListener('click',async()=>{error='';const r=await fetch('/demo/anafi_incidents_sanitized.csv');csvText=await r.text();fileName='anafi_incidents_sanitized.csv';vehicle='Parrot Anafi';notes='Investigate the motor cut-out sequence and distinguish it from battery, radio-link, GPS, or magnetic causes.';result=null;resetReplay();render()});
-  document.querySelector('#fileInput')?.addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>4_000_000){error='For this MVP, use a CSV under 4 MB.';render();return}csvText=await f.text();fileName=f.name;result=null;error='';resetReplay();render()});
+  const input=document.querySelector('#fileInput'); const dz=document.querySelector('#dropzone'); input?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)loadFile(f)}); ['dragenter','dragover'].forEach(ev=>dz?.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('dragging')})); ['dragleave','drop'].forEach(ev=>dz?.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('dragging')})); dz?.addEventListener('drop',e=>{const f=e.dataTransfer?.files?.[0];if(f)loadFile(f)});
   document.querySelector('#vehicle')?.addEventListener('input',e=>vehicle=e.target.value);document.querySelector('#notes')?.addEventListener('input',e=>notes=e.target.value);
   document.querySelector('#runBtn')?.addEventListener('click',analyze);
   document.querySelector('#replayBtn')?.addEventListener('click',replayIncident);
 }
 async function parseResponse(res){const raw=await res.text();try{return JSON.parse(raw)}catch{return {error:`Backend returned unreadable data (HTTP ${res.status}).`}}}
 async function call(action,extra={}){const params=new URLSearchParams({action,vehicle,notes,...extra});const res=await fetch(`/api/analyze?${params}`,{method:'POST',headers:{'content-type':'text/csv; charset=utf-8'},body:csvText});const data=await parseResponse(res);if(!res.ok||data.error)throw new Error(data.error||`HTTP ${res.status}`);return data}
+async function loadFile(f){if(f.size>4_000_000){error='For this MVP, use a CSV under 4 MB.';render();return}if(!/\.csv$/i.test(f.name)){error='Please choose a CSV telemetry file.';render();return}csvText=await f.text();fileName=f.name;result=null;error='';resetReplay();render()}
 function resetReplay(){replayState='idle';replayResult=null;replayError=''}
 async function replayIncident(){const expected=result?.deterministic_replay?.verdict_sha256;if(!csvText||!expected||replayState==='running')return;replayState='running';replayResult=null;replayError='';render();try{const replay=await call('replay',{expected});replayResult=replay.replay_verification||null;if(!replayResult)throw new Error('Replay returned no verification record.');replayState=replayResult.exact_match?'match':'mismatch'}catch(e){replayState='error';replayError=e?.message||'Replay failed'}render()}
 async function analyze(){if(!csvText||loading)return;loading=true;error='';result=null;resetReplay();render();try{result=await call('base');loading=false;render();try{const enriched=await call('enrich');if(enriched&&!enriched.error)result=enriched}catch{}render()}catch(e){loading=false;error=e?.message||'Analysis failed';render()}}
 render();
+
+async function checkSystem(){try{const r=await fetch('/api/analyze?action=health',{method:'GET',cache:'no-store'});const data=await r.json();systemStatus=r.ok&&data.status==='ok'?'operational':'degraded'}catch{systemStatus='unreachable'}render()}
+checkSystem();
