@@ -32,6 +32,7 @@ AeroSage never lets the LLM replace the underlying evidence. It produces a deter
 - Emits a versioned Decision Ledger with telemetry inputs, rule votes and suppression reasons
 - Replays the same CSV through a deterministic-only endpoint and verifies the verdict fingerprint
 - Produces a ranked incident report with confidence, evidence, timeline and recommended next actions
+- Lets operators copy a human-readable report or export the full JSON report and evidence ledger as CSV
 
 ## Evidence guardrails
 
@@ -154,7 +155,7 @@ npx netlify-cli dev
 
 ## Security
 
-API keys are server-side environment variables. `.env` files are excluded by `.gitignore` and must never be committed.
+API keys are server-side environment variables. Browser clients never receive provider keys. Request metadata is length-limited server-side, and API responses include basic anti-sniffing, referrer and permissions-policy headers. `.env` files are excluded by `.gitignore` and must never be committed.
 
 ## MVP limitations
 
