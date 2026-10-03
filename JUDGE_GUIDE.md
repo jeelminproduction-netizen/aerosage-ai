@@ -59,6 +59,10 @@ Guardrails    ->  evidence-based accept / reject / cap
 
 That separation is the core product idea: generative reasoning is useful, but measured telemetry remains authoritative.
 
+## 3.5 Action safety and evidence handoff
+
+The live report also exposes a server-generated **Action Policy** in `REVIEW_ONLY` mode with a `No automatic actuation` gate. High/critical cases require qualified human review before return to operation. Operators can export an **Evidence bundle** containing the investigation ID, SHA-256 manifest, provenance, Decision Ledger, investigation trace, replay fingerprint, action policy and grounding sources.
+
 ## 4. How AeroSage maps to the judging criteria
 
 ### Technological implementation
