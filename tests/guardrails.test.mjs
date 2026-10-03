@@ -16,7 +16,7 @@ source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hyp
 const sandbox = { crypto: globalThis.crypto, TextEncoder };
 vm.createContext(sandbox);
 new vm.Script(source, { filename: sourcePath }).runInContext(sandbox);
-const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, sha256Hex } = sandbox.__AEROSAGE_TEST_API__;
+const { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, buildActionPolicy, sha256Hex } = sandbox.__AEROSAGE_TEST_API__;
 
 function incidentPacket(values = {}) {
   return {
