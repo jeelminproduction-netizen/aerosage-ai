@@ -41,6 +41,7 @@ export default async (req) => {
       evidence_manifest: manifest
     };
     baseline.deterministic_replay = await buildDeterministicReplayProof(manifest.csv_sha256, baseline);
+    baseline.action_policy = buildActionPolicy(baseline, packet);
   } catch (e) {
     return reply({ error: safeMessage(e, 'Telemetry preprocessing failed.') }, 400);
   }
@@ -53,6 +54,7 @@ export default async (req) => {
       ai_status: 'pending',
       web_status: 'pending',
       web_grounding: null,
+      action_policy: buildActionPolicy(baseline, packet),
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
@@ -93,6 +95,7 @@ export default async (req) => {
       evidence_provenance: baseline.evidence_provenance,
       evidence_manifest: baseline.evidence_manifest,
       deterministic_replay: baseline.deterministic_replay,
+      action_policy: buildActionPolicy(report, packet),
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   } catch (e) {
@@ -108,6 +111,7 @@ export default async (req) => {
       evidence_provenance: baseline.evidence_provenance,
       evidence_manifest: baseline.evidence_manifest,
       deterministic_replay: baseline.deterministic_replay,
+      action_policy: buildActionPolicy(baseline, packet),
       analysis_performance: performanceSummary(packet, requestStarted)
     });
   }
@@ -470,6 +474,13 @@ function applyEvidenceGuardrails(report, packet, fallback, proposalSource='nemot
   report.investigation_trace=trace;
   report.decision_ledger=buildDecisionLedger(trace,packet,report.likely_causes,proposalSource,{risk_floor_applied:riskFloorApplied,baseline_risk:fallback.risk_level,final_risk:report.risk_level});
   return report;
+}
+function buildActionPolicy(report, packet){
+  const risk=String(report?.risk_level||'medium').toLowerCase();
+  const primary=report?.likely_causes?.[0]?.cause||'Evidence review';
+  const checks=['Preserve the original telemetry and its SHA-256 identity.','Verify the measured evidence around the incident window before intervention.','Prefer reversible inspection or maintenance steps before any operational change.'];
+  if(risk==='critical'||risk==='high') checks.unshift('Require qualified human review before returning the system to operation.');
+  return {schema:'aerosage-action-policy-v1',mode:'REVIEW_ONLY',gate:'No automatic actuation',risk_floor:risk,primary_evidence:primary,checks:checks.slice(0,4),authority:'Human operator; AeroSage only recommends and documents actions.'};
 }
 function groundingQuery(vehicle, packet){
   const target=primaryEventRows(packet);
