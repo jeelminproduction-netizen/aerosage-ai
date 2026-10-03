@@ -12,7 +12,7 @@ source = source.replace(/export\s+default\s+async\s*\(req\)\s*=>\s*\{/, 'async f
 if (/\bexport\s+default\b/.test(source)) {
   throw new Error('Could not instrument analyze.mjs for guardrail tests. The handler signature changed.');
 }
-source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, sha256Hex };`;
+source += `\n;globalThis.__AEROSAGE_TEST_API__ = { deriveEvidenceGuardrails, hypothesisDomain, applyEvidenceGuardrails, deterministicReport, buildEvidenceProvenance, buildEvidenceManifest, buildDeterministicReplayProof, verifyReplay, buildActionPolicy, sha256Hex };`;
 const sandbox = { crypto: globalThis.crypto, TextEncoder };
 vm.createContext(sandbox);
 new vm.Script(source, { filename: sourcePath }).runInContext(sandbox);
@@ -52,6 +52,15 @@ function checkedReport(packet, causes, risk = 'critical', confidence = 0.9) {
   return applyEvidenceGuardrails(report, packet, fallback);
 }
 
+test('action policy is review-only and never autonomous', () => {
+  const packet = incidentPacket();
+  const policy = buildActionPolicy({ risk_level: 'critical', likely_causes: [{ cause: 'Propulsion / motor cut-out event' }] }, packet);
+  assert.equal(policy.mode, 'REVIEW_ONLY');
+  assert.equal(policy.gate, 'No automatic actuation');
+  assert.equal(policy.authority, 'Human operator; AeroSage only recommends and documents actions.');
+  assert.equal(policy.risk_floor, 'critical');
+  assert.equal(policy.checks.length, 4);
+});
 test('targets the explicit cut-out row', () => {
   const g = deriveEvidenceGuardrails(incidentPacket());
   assert.deepEqual(Array.from(g.target_rows), [42]);
